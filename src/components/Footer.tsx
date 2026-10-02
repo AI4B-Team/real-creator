@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Logo from "./Logo";
 
@@ -34,6 +35,24 @@ const footerCols: { title: string; links: { label: string; to: string }[] }[] = 
 ];
 
 const Footer = () => {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const sync = () => {
+      try { setIsLoggedIn(localStorage.getItem("ra_auth") === "1"); } catch {}
+    };
+    sync();
+    window.addEventListener("storage", sync);
+    window.addEventListener("ra_auth_changed", sync);
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener("ra_auth_changed", sync);
+    };
+  }, []);
+
+  // Hide the footer entirely for logged-in users
+  if (isLoggedIn) return null;
+
   return (
     <footer className="bg-foreground px-6 md:px-12 pt-14 pb-8">
       <div className="max-w-[1440px] mx-auto">
