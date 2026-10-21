@@ -96,8 +96,9 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
       const { data, error } = await supabase.from("ebooks").select("*").eq("user_id", userId).order("updated_at", { ascending: false });
       if (error) throw error;
       const dbEbooks = (data || []).map(mapRow);
+      const storedBooks = await readLocalEbooks<Ebook>().catch(() => []);
       setEbooks(prev => {
-        const localBooks = prev.filter(b => b.id.startsWith("local-"));
+        const localBooks = [...new Map([...storedBooks, ...prev].filter(b => b.id.startsWith("local-") && (!b.userId || b.userId === userId)).map(b => [b.id, b])).values()];
         if (dbEbooks.length > 0 || localBooks.length > 0) {
           return [...localBooks, ...dbEbooks];
         }
