@@ -14,6 +14,7 @@ import {
   ChevronLeft, ChevronRight, Image, BookOpenCheck, Hash, Star, Trophy, Gem, Rocket, Users,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/hooks/use-toast";
@@ -268,7 +269,7 @@ const NewEbookPage = () => {
   const [showRecordModal, setShowRecordModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showSourceCards, setShowSourceCards] = useState(false);
-  const [showLinkInput, setShowLinkInput] = useState(false);
+  const [showLinkInput, setShowLinkInput] = useState(searchParams.get("source") === "url");
   const [linkInputValue, setLinkInputValue] = useState("");
   const [attachedSources, setAttachedSources] = useState<{ id: string; type: "file" | "link" | "audio"; label: string }[]>([]);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -315,7 +316,7 @@ const NewEbookPage = () => {
 
   const [bookData, setBookData] = useState<NewBookData>({
     prompt: "",
-    sourceType: "ai",
+    sourceType: searchParams.get("source") === "url" ? "link" : "ai",
     contentType: "ebook",
     chapterContentType: "text-images",
     language: "en",
@@ -332,6 +333,14 @@ const NewEbookPage = () => {
   const [isApplyingSettings, setIsApplyingSettings] = useState(false);
 
   const [contentTypeSelected, setContentTypeSelected] = useState(initialTab === "design");
+
+  // Honor the dashboard's link entry point, including navigation within this page.
+  useEffect(() => {
+    if (searchParams.get("source") !== "url") return;
+    setActiveTab("idea");
+    setShowLinkInput(true);
+    setBookData(prev => ({ ...prev, sourceType: "link" }));
+  }, [searchParams]);
 
   // Canvas design state
   type PageType = "cover" | "toc" | "chapter" | "chapter-page" | "back" | "blank";
@@ -1565,7 +1574,7 @@ const NewEbookPage = () => {
               </button>
 
               {/* Insert Link */}
-              <button onClick={() => { setShowLinkInput(true); setShowSourceCards(false); }} className="group flex flex-col items-center p-6 rounded-2xl border border-foreground/[0.1] hover:border-foreground/[0.2] bg-background transition-all">
+              <button onClick={() => { setShowLinkInput(true); setShowSourceCards(false); setBookData(prev => ({ ...prev, sourceType: "link" })); }} className="group flex flex-col items-center p-6 rounded-2xl border border-foreground/[0.1] hover:border-foreground/[0.2] bg-background transition-all">
                 <div className="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center mb-3 group-hover:bg-accent/15 transition-colors">
                   <Link2 className="w-6 h-6 text-accent" />
                 </div>
@@ -1627,16 +1636,16 @@ const NewEbookPage = () => {
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Link2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                  <input value={linkInputValue} onChange={e => setLinkInputValue(e.target.value)}
+                  <input aria-label="Website Link" autoFocus value={linkInputValue} onChange={e => setLinkInputValue(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter" && linkInputValue.trim()) { addSource("link", linkInputValue.trim()); setLinkInputValue(""); setShowLinkInput(false); toast({ title: "Link attached" }); } }}
                     placeholder="https://..."
                     className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-foreground/[0.1] bg-background text-sm outline-none focus:border-accent transition-colors" />
                 </div>
-                <button onClick={() => { if (linkInputValue.trim()) { addSource("link", linkInputValue.trim()); setLinkInputValue(""); setShowLinkInput(false); toast({ title: "Link attached" }); } }}
+                <Button onClick={() => { if (linkInputValue.trim()) { addSource("link", linkInputValue.trim()); setLinkInputValue(""); setShowLinkInput(false); toast({ title: "Link attached" }); } }}
                   disabled={!linkInputValue.trim()}
-                  className="px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50">
+                  className="px-4 py-2.5 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50">
                   Add
-                </button>
+                </Button>
               </div>
             </div>
           </DialogContent>

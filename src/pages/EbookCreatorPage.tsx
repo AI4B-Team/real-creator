@@ -258,7 +258,7 @@ const EbookCreatorPage = () => {
           </button>
           <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.docx,.txt,.doc,.epub" onChange={() => { navigate("/ebook-creator/new?source=upload"); }} />
 
-          <button onClick={() => navigate("/ebook-creator/new?source=url")} className="group relative p-6 rounded-2xl border border-foreground/[0.15] bg-foreground/[0.02] hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-all flex flex-col">
+          <button onClick={() => { sessionStorage.removeItem("ebook-last-url"); sessionStorage.removeItem("ebook-current-id"); navigate("/ebook-creator/new?source=url"); }} className="group relative p-6 rounded-2xl border border-foreground/[0.15] bg-foreground/[0.02] hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-all flex flex-col">
             <div className="flex flex-col items-center text-center flex-1">
               <div className="w-16 h-16 rounded-2xl bg-blue-100 dark:bg-blue-900/30 group-hover:bg-blue-200 dark:group-hover:bg-blue-800/40 flex items-center justify-center mb-4 transition-all">
                 <Link2 className="w-7 h-7 text-blue-500 group-hover:scale-110 transition-all" />
