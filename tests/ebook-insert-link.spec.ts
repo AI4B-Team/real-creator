@@ -1,4 +1,4 @@
-import { test, expect } from "../playwright-fixture";
+import { test, expect } from "@playwright/test";
 
 test("dashboard Insert Link opens the dialog and attaches a URL", async ({ page }) => {
   await page.goto("/ebook-creator");
