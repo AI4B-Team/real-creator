@@ -1,0 +1,3 @@
+- [ ] Make local ebook creation and edits survive reloads, including generated images.
+- [ ] Make save controls perform real writes and report cloud failures honestly.
+- [ ] Test persistence and verify reload through the ebook dashboard.
