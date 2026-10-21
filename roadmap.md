@@ -1,0 +1,4 @@
+- [x] Make local ebook creation and edits survive reloads, including generated images.
+- [x] Make save controls perform real writes and report cloud failures honestly.
+- [x] Test persistence and verify reload through the ebook dashboard.
+- [ ] Verify cloud saving as the requesting user; blocked because no matching cloud account exists and the current login screen only sets a local flag.

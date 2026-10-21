@@ -393,7 +393,6 @@ const NewEbookPage = () => {
   const handlePageElementsChange = useCallback((elements: Record<string, any[]>) => {
     setSavedPageElements(elements);
     try { localStorage.setItem(STORAGE_KEY_ELEMENTS, JSON.stringify(elements)); } catch {}
-    setLastSaved(new Date());
   }, []);
 
   const [selectedPageId, setSelectedPageId] = useState<string | null>("1");
@@ -499,18 +498,18 @@ const NewEbookPage = () => {
       if (Array.isArray(savedProject.pages) && savedProject.pages.length > 0) {
         setEbookPages(savedProject.pages);
         setSelectedPageId(savedProject.pages[0]?.id || null);
-      } else if (state.book.id === "demo-tutorial") {
+      } else {
         // Load default tutorial pages for the demo book
         const defaultPages = getDefaultPages();
         setEbookPages(defaultPages);
         setSelectedPageId(defaultPages[0]?.id || null);
-        localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(defaultPages));
+        try { localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(defaultPages)); } catch {}
       }
 
       if (savedProject.elements && typeof savedProject.elements === "object" && Object.keys(savedProject.elements).length > 0) {
         setSavedPageElements(savedProject.elements);
-        localStorage.setItem(STORAGE_KEY_ELEMENTS, JSON.stringify(savedProject.elements));
-      } else if (state.book.id === "demo-tutorial") {
+        try { localStorage.setItem(STORAGE_KEY_ELEMENTS, JSON.stringify(savedProject.elements)); } catch {}
+      } else {
         // Clear stale elements so canvas generates fresh tutorial content
         setSavedPageElements({});
         localStorage.removeItem(STORAGE_KEY_ELEMENTS);
@@ -559,16 +558,16 @@ const NewEbookPage = () => {
 
   useEffect(() => {
     if (!currentEbookId || activeTab !== "design") return;
-    if (currentEbookId.startsWith("demo-") || currentEbookId.startsWith("local-")) return;
+    if (currentEbookId.startsWith("demo-") || isGeneratingBook) return;
 
     if (projectSaveTimeoutRef.current) {
       clearTimeout(projectSaveTimeoutRef.current);
     }
 
     projectSaveTimeoutRef.current = setTimeout(() => {
-      updateEbook(currentEbookId, {
+      void updateEbook(currentEbookId, {
         outline: buildSavedProjectSnapshot(),
-      });
+      }).then(saved => { if (saved) setLastSaved(new Date()); });
     }, 1000);
 
     return () => {
@@ -576,7 +575,7 @@ const NewEbookPage = () => {
         clearTimeout(projectSaveTimeoutRef.current);
       }
     };
-  }, [activeTab, buildSavedProjectSnapshot, currentEbookId, ebookPages, savedPageElements, updateEbook]);
+  }, [activeTab, buildSavedProjectSnapshot, currentEbookId, ebookPages, savedPageElements, updateEbook, isGeneratingBook]);
 
   const currentLanguage = LANGUAGES.find(l => l.code === bookData.language);
   const currentTone = TONES.find(t => t.id === bookData.tone);
@@ -728,6 +727,8 @@ const NewEbookPage = () => {
 
       if (newEbook) {
         setCurrentEbookId(newEbook.id);
+      } else {
+        throw new Error("Your book could not be saved. Please try again.");
       }
 
       const shouldGenerateImages = bookData.includeImages && bookData.chapterContentType !== "text-only";
@@ -865,6 +866,12 @@ const NewEbookPage = () => {
             currentChapterTitle: chapterSequence[generatedChapters.length]?.title ?? "",
           });
         });
+        if (newEbook) {
+          await updateEbook(newEbook.id, {
+            words: totalWords,
+            outline: { ...baseSnapshot, generatedChapters, pages: liveLayout.pages, elements: liveLayout.elementsByPage },
+          });
+        }
       }
 
       // Final layout with fresh random theme
@@ -923,7 +930,7 @@ const NewEbookPage = () => {
       setSelectedPageId(layout.pages[0]?.id ?? null);
 
       if (newEbook) {
-        updateEbook(newEbook.id, {
+        const saved = await updateEbook(newEbook.id, {
           status: "draft",
           progress: 100,
           words: totalWords,
@@ -935,6 +942,7 @@ const NewEbookPage = () => {
             elements: prebuiltElements,
           },
         });
+        if (saved) setLastSaved(new Date());
       }
 
       toast({ title: "Your AI-written book is ready!" });
@@ -1190,10 +1198,14 @@ const NewEbookPage = () => {
               <div className="relative group">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <button onClick={() => { setLastSaved(new Date()); toast({ title: "Project saved!" }); }}
+                    <button onClick={async () => {
+                      if (!currentEbookId) return;
+                      const saved = await updateEbook(currentEbookId, { outline: buildSavedProjectSnapshot() });
+                      if (saved) { setLastSaved(new Date()); toast({ title: currentEbookId.startsWith("local-") ? "Saved On This Device" : "Project Saved" }); }
+                    }}
                       className="flex items-center gap-1.5 bg-emerald-500/20 px-2.5 py-1 rounded-lg hover:bg-emerald-500/30 transition-colors">
                       <Cloud className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="text-xs font-medium text-emerald-400">Auto-Saved</span>
+                      <span className="text-xs font-medium text-emerald-400">{currentEbookId?.startsWith("local-") ? "Saved On This Device" : "Auto-Saved"}</span>
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs z-[9999]">

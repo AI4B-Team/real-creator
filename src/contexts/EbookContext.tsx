@@ -1,5 +1,7 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { readLocalEbooks, saveLocalEbook, removeLocalEbook } from "@/lib/ebookLocalPersistence";
+import { toast } from "sonner";
 
 export interface Ebook {
   id: string;
@@ -26,7 +28,7 @@ interface EbookContextType {
   ebooks: Ebook[];
   loading: boolean;
   setEbooks: React.Dispatch<React.SetStateAction<Ebook[]>>;
-  updateEbook: (id: string, updates: Partial<Ebook>) => void;
+  updateEbook: (id: string, updates: Partial<Ebook>) => Promise<boolean>;
   addEbook: (ebook: Omit<Ebook, "id">) => Promise<Ebook | null>;
   deleteEbook: (id: string) => void;
   getEbook: (id: string) => Ebook | undefined;
@@ -66,6 +68,8 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
   const [ebooks, setEbooks] = useState<Ebook[]>(DEMO_EBOOKS);
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const booksRef = useRef(ebooks);
+  booksRef.current = ebooks;
 
   // Listen for auth changes
   useEffect(() => {
@@ -80,8 +84,9 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
 
   const refreshEbooks = useCallback(async () => {
     if (!userId) {
+      const storedBooks = await readLocalEbooks<Ebook>().catch(() => []);
       setEbooks(prev => {
-        const localBooks = prev.filter(b => b.id.startsWith("local-"));
+        const localBooks = [...new Map([...storedBooks.filter(b => !b.userId), ...prev.filter(b => b.id.startsWith("local-"))].map(b => [b.id, b])).values()];
         return localBooks.length > 0 ? [...localBooks, ...DEMO_EBOOKS] : DEMO_EBOOKS;
       });
       return;
@@ -91,8 +96,9 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
       const { data, error } = await supabase.from("ebooks").select("*").eq("user_id", userId).order("updated_at", { ascending: false });
       if (error) throw error;
       const dbEbooks = (data || []).map(mapRow);
+      const storedBooks = await readLocalEbooks<Ebook>().catch(() => []);
       setEbooks(prev => {
-        const localBooks = prev.filter(b => b.id.startsWith("local-"));
+        const localBooks = [...new Map([...storedBooks, ...prev].filter(b => b.id.startsWith("local-") && (!b.userId || b.userId === userId)).map(b => [b.id, b])).values()];
         if (dbEbooks.length > 0 || localBooks.length > 0) {
           return [...localBooks, ...dbEbooks];
         }
@@ -109,12 +115,23 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
     refreshEbooks();
   }, [refreshEbooks]);
 
-  const updateEbook = useCallback((id: string, updates: Partial<Ebook>) => {
+  const updateEbook = useCallback(async (id: string, updates: Partial<Ebook>): Promise<boolean> => {
+    const existing = booksRef.current.find(book => book.id === id);
+    if (!existing) return false;
+    const updated = { ...existing, ...updates, updatedAt: new Date().toISOString().split("T")[0] };
+    booksRef.current = booksRef.current.map(book => book.id === id ? updated : book);
     setEbooks(prev => prev.map(book =>
-      book.id === id ? { ...book, ...updates, updatedAt: new Date().toISOString().split("T")[0] } : book
+      book.id === id ? updated : book
     ));
+    try {
+      await saveLocalEbook(updated);
+    } catch (error) {
+      console.error("Failed to save local ebook:", error);
+      toast.error("Could not save a copy on this device. Keep this page open and free up storage.");
+      if (id.startsWith("local-") || id.startsWith("demo-") || !userId) return false;
+    }
     // If it's a real UUID (not demo), persist to DB
-    if (!id.startsWith("demo-") && userId) {
+    if (!id.startsWith("demo-") && !id.startsWith("local-") && userId) {
       const dbUpdates: {
         title?: string; description?: string; status?: string; progress?: number;
         chapters?: number; words?: number; cover_color?: string; cover_image?: string;
@@ -131,18 +148,30 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
       if (updates.tags !== undefined) dbUpdates.tags = updates.tags;
       if (updates.outline !== undefined) dbUpdates.outline = updates.outline;
       if (Object.keys(dbUpdates).length > 0) {
-        supabase.from("ebooks").update(dbUpdates).eq("id", id).then(({ error }) => {
-          if (error) console.error("Failed to update ebook:", error);
-        });
+        const { error } = await supabase.from("ebooks").update(dbUpdates).eq("id", id).eq("user_id", userId);
+        if (error) {
+          console.error("Failed to update ebook:", error);
+          toast.error("Cloud saving failed. A copy is saved on this device; please try saving again.");
+          return false;
+        }
       }
     }
+    return true;
   }, [userId]);
 
   const addEbook = useCallback(async (ebook: Omit<Ebook, "id">): Promise<Ebook | null> => {
     if (!userId) {
-      // Demo mode: add locally with temp id
-      const newEbook: Ebook = { ...ebook, id: `local-${Date.now()}` };
+      const newEbook: Ebook = { ...ebook, id: `local-${crypto.randomUUID()}` };
+      try {
+        await saveLocalEbook(newEbook);
+      } catch (error) {
+        console.error("Failed to save local ebook:", error);
+        toast.error("Could not save your book on this device. Free up storage and try again.");
+        return null;
+      }
+      booksRef.current = [newEbook, ...booksRef.current];
       setEbooks(prev => [newEbook, ...prev]);
+      toast.info("Book saved on this device only. There is no active cloud sign-in.");
       return newEbook;
     }
     try {
@@ -165,18 +194,26 @@ export const EbookProvider = ({ children }: { children: ReactNode }) => {
       }).select().single();
       if (error) throw error;
       const newEbook = mapRow(data);
+      booksRef.current = [newEbook, ...booksRef.current];
       setEbooks(prev => [newEbook, ...prev]);
       return newEbook;
     } catch (e) {
       console.error("Failed to add ebook:", e);
-      const newEbook: Ebook = { ...ebook, id: `local-${Date.now()}` };
+      const newEbook: Ebook = { ...ebook, id: `local-${crypto.randomUUID()}`, userId };
+      try { await saveLocalEbook(newEbook); } catch {
+        toast.error("Your book could not be saved. Please try again before closing this page.");
+        return null;
+      }
+      booksRef.current = [newEbook, ...booksRef.current];
       setEbooks(prev => [newEbook, ...prev]);
+      toast.error("Cloud saving failed. Your book is saved on this device only.");
       return newEbook;
     }
   }, [userId]);
 
   const deleteEbook = useCallback((id: string) => {
     setEbooks(prev => prev.filter(book => book.id !== id));
+    void removeLocalEbook(id).catch(error => console.error("Failed to remove local ebook:", error));
     if (!id.startsWith("demo-") && !id.startsWith("local-") && userId) {
       supabase.from("ebooks").delete().eq("id", id).then(({ error }) => {
         if (error) console.error("Failed to delete ebook:", error);
